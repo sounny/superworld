@@ -3,31 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Super World</title>
+    <title>Super World Enhanced</title>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; align-items: center; font-family: Arial, sans-serif; background-color: #f0f0f0; }
-        #gameCanvas { border: 2px solid black; margin-top: 10px; background-color: #d3e8ff; cursor: pointer; }
+        body { margin: 0; display: flex; flex-direction: column; align-items: center; font-family: Arial, sans-serif; background-color: #e0e0e0; }
+        #game-container { display: flex; flex-direction: column; align-items: center; }
+        #gameCanvas { border: 2px solid black; margin-top: 10px; cursor: pointer; }
         #game-info { margin-top: 10px; padding: 10px; background-color: #fff; border: 1px solid #ccc; width: 780px; text-align: center; }
-        #status-message { font-weight: bold; min-height: 20px; }
+        #status-message { font-weight: bold; min-height: 20px; margin-bottom: 5px; }
         .player-info span { padding: 0 10px; }
+        .controls button, .diplomacy button { margin: 5px; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+        .diplomacy { margin-top: 10px; }
+        #game-day-counter { font-style: italic; margin-bottom: 5px; }
+
+        @keyframes pulse_yellow {
+            0% { box-shadow: 0 0 0 0 rgba(255, 255, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 255, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 255, 0, 0); }
+        }
+        .pulsing-highlight {
+            /* This is a conceptual class; actual pulsing will be done on canvas */
+        }
+
     </style>
 </head>
 <body>
     <h1>Super World</h1>
-    <div id="game-info">
-        <div id="status-message">Game loading... Click your territory, then an enemy territory to attack.</div>
-        <div class="player-info">
-            <span id="player-human-info" style="color:blue;">Player (Blue): 0 territories</span>
-            <span id="player-ai1-info" style="color:red;">AI Alpha (Red): 0 territories</span>
-            <span id="player-ai2-info" style="color:green;">AI Gamma (Green): 0 territories</span>
+    <div id="game-container">
+        <div id="game-info">
+            <div id="status-message">Game loading... Click your territory, then an enemy territory to attack.</div>
+            <div id="game-day-counter">Game Day: 0</div>
+            <div class="player-info">
+                <span id="player-human-info" style="color:blue;">Player (Blue): 0 territories</span>
+                <span id="player-ai1-info" style="color:red;">AI Alpha (Red): 0 territories</span>
+                <span id="player-ai2-info" style="color:green;">AI Gamma (Green): 0 territories</span>
+            </div>
+            <div class="diplomacy">
+                Diplomacy:
+                <button id="ally-ai1-btn">Ally with Red</button>
+                <button id="ally-ai2-btn">Ally with Green</button>
+            </div>
+            <div class="controls">
+                <button id="restart-btn">Restart Game</button>
+            </div>
         </div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
     </div>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const statusMessage = document.getElementById('status-message');
+        const gameDayDisplay = document.getElementById('game-day-counter');
+        const restartButton = document.getElementById('restart-btn');
+        const allyAi1Button = document.getElementById('ally-ai1-btn');
+        const allyAi2Button = document.getElementById('ally-ai2-btn');
+
 
         const PLAYER_HUMAN = 0;
         const PLAYER_AI_1 = 1;
@@ -38,33 +68,47 @@
             [PLAYER_HUMAN]: 'blue',
             [PLAYER_AI_1]: 'red',
             [PLAYER_AI_2]: 'green',
-            [NEUTRAL]: '#cccccc' // Light grey for neutral
+            [NEUTRAL]: '#cccccc'
         };
         const PLAYER_NAMES = {
             [PLAYER_HUMAN]: 'You (Blue)',
             [PLAYER_AI_1]: 'AI Alpha (Red)',
             [PLAYER_AI_2]: 'AI Gamma (Green)'
-        }
+        };
 
         let territories = [];
-        let players = [
-            { id: PLAYER_HUMAN, name: PLAYER_NAMES[PLAYER_HUMAN], color: PLAYER_COLORS[PLAYER_HUMAN], isAI: false, territoryCount: 0 },
-            { id: PLAYER_AI_1, name: PLAYER_NAMES[PLAYER_AI_1], color: PLAYER_COLORS[PLAYER_AI_1], isAI: true, territoryCount: 0 },
-            { id: PLAYER_AI_2, name: PLAYER_NAMES[PLAYER_AI_2], color: PLAYER_COLORS[PLAYER_AI_2], isAI: true, territoryCount: 0 }
-        ];
+        let players = []; // Will be initialized
 
         let selectedTerritoryId = null;
         let gameOver = false;
-        let gameLoopInterval, troopGenInterval, aiActionInterval;
+        let troopGenInterval, aiActionInterval;
+        let gameDay = 0;
+
+        let humanAlliances = {}; // e.g., { [PLAYER_AI_1]: true, [PLAYER_AI_2]: false }
 
         const TERRITORY_RADIUS = 50;
-        const TROOP_GEN_INTERVAL_MS = 3000; // Troops generate every 3 seconds
+        const TROOP_GEN_INTERVAL_MS = 3000;
         const TROOPS_PER_GEN = 1;
-        const AI_ACTION_INTERVAL_MS = 2000; // AI acts every 2 seconds
+        const AI_ACTION_INTERVAL_MS = 2000;
+        let pulseAnimationTime = 0;
+
+
+        function initializePlayers() {
+            players = [
+                { id: PLAYER_HUMAN, name: PLAYER_NAMES[PLAYER_HUMAN], color: PLAYER_COLORS[PLAYER_HUMAN], isAI: false, territoryCount: 0 },
+                { id: PLAYER_AI_1, name: PLAYER_NAMES[PLAYER_AI_1], color: PLAYER_COLORS[PLAYER_AI_1], isAI: true, territoryCount: 0 },
+                { id: PLAYER_AI_2, name: PLAYER_NAMES[PLAYER_AI_2], color: PLAYER_COLORS[PLAYER_AI_2], isAI: true, territoryCount: 0 }
+            ];
+            humanAlliances = {
+                [PLAYER_AI_1]: false,
+                [PLAYER_AI_2]: false
+            };
+            updateAllyButtonText();
+        }
+
 
         function initializeTerritories() {
             territories = [
-                // id, name, x, y, ownerId, troops, neighbors
                 { id: 0, name: "Northland", x: 150, y: 100, ownerId: NEUTRAL, troops: 5, neighbors: [1, 3] },
                 { id: 1, name: "Westwood", x: 100, y: 300, ownerId: NEUTRAL, troops: 5, neighbors: [0, 2, 3, 4] },
                 { id: 2, name: "Southbay", x: 150, y: 500, ownerId: NEUTRAL, troops: 5, neighbors: [1, 4] },
@@ -74,57 +118,80 @@
                 { id: 6, name: "Riverbend", x: 700, y: 300, ownerId: NEUTRAL, troops: 5, neighbors: [3, 4, 5] },
             ];
 
-            // Assign starting territories
-            territories[1].ownerId = PLAYER_HUMAN; territories[1].troops = 10; // Human
-            territories[5].ownerId = PLAYER_AI_1;  territories[5].troops = 10; // AI 1
-            territories[2].ownerId = PLAYER_AI_2;  territories[2].troops = 10; // AI 2
-            
-            updatePlayerTerritoryCounts();
+            territories[1].ownerId = PLAYER_HUMAN; territories[1].troops = 10;
+            territories[5].ownerId = PLAYER_AI_1;  territories[5].troops = 10;
+            territories[2].ownerId = PLAYER_AI_2;  territories[2].troops = 10;
         }
 
-        function drawTerritories() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function drawBackground() {
+            ctx.fillStyle = '#d3e8ff'; // Light blue base
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Draw connections first
+            // Simple texture
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.02)';
+            for (let i = 0; i < canvas.width; i += 20) {
+                for (let j = 0; j < canvas.height; j += 20) {
+                    if ((i / 20 + j / 20) % 2 === 0) {
+                        ctx.fillRect(i, j, 10, 10);
+                        ctx.fillRect(i + 10, j + 10, 10, 10);
+                    }
+                }
+            }
+        }
+
+
+        function drawTerritories() {
+            drawBackground();
+
             ctx.strokeStyle = '#555';
             ctx.lineWidth = 2;
             territories.forEach(t => {
                 t.neighbors.forEach(neighborId => {
                     const neighbor = territories.find(n => n.id === neighborId);
-                    if (neighbor && t.id < neighbor.id) { // Draw each connection once
+                    if (neighbor && t.id < neighbor.id) {
                         ctx.beginPath();
                         ctx.moveTo(t.x, t.y);
-                        // Corrected line: removed "существо "
                         ctx.lineTo(neighbor.x, neighbor.y);
                         ctx.stroke();
                     }
                 });
             });
             
-            // Draw territories and troops
+            const selected = territories.find(t => t.id === selectedTerritoryId);
+
             territories.forEach(t => {
                 ctx.beginPath();
                 ctx.arc(t.x, t.y, TERRITORY_RADIUS, 0, Math.PI * 2);
                 ctx.fillStyle = PLAYER_COLORS[t.ownerId];
                 ctx.fill();
 
+                let currentStrokeStyle = 'black';
+                let currentLineWidth = 2;
+
                 if (t.id === selectedTerritoryId) {
-                    ctx.strokeStyle = 'gold';
-                    ctx.lineWidth = 4;
-                } else {
-                    ctx.strokeStyle = 'black';
-                    ctx.lineWidth = 2;
+                    currentStrokeStyle = 'gold';
+                    currentLineWidth = 4;
+                } else if (selected && selected.ownerId === PLAYER_HUMAN && selected.neighbors.includes(t.id) && t.ownerId !== PLAYER_HUMAN) {
+                    // Pulsing highlight for attackable neighbors
+                    const pulseAlpha = (Math.sin(pulseAnimationTime * 0.1) + 1) / 2 * 0.7; // 0 to 0.7 alpha
+                    ctx.strokeStyle = `rgba(255, 255, 0, ${pulseAlpha})`; // Yellow pulse
+                    ctx.lineWidth = 5;
+                    ctx.stroke(); // Draw pulse first
+                    currentStrokeStyle = 'black'; // Reset for normal border
+                    currentLineWidth = 1;   // Thinner normal border if pulsed
                 }
+                
+                ctx.strokeStyle = currentStrokeStyle;
+                ctx.lineWidth = currentLineWidth;
                 ctx.stroke();
 
-                // Draw name
+
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'center';
                 ctx.font = '12px Arial';
                 ctx.fillText(t.name, t.x, t.y - TERRITORY_RADIUS - 5);
 
-                // Draw troop count
-                ctx.fillStyle = (t.ownerId === PLAYER_HUMAN || t.ownerId === null) ? 'black' : 'white'; // Contrast for troop text
+                ctx.fillStyle = (t.ownerId === PLAYER_HUMAN || t.ownerId === null || PLAYER_COLORS[t.ownerId] === '#cccccc') ? 'black' : 'white';
                 ctx.font = 'bold 16px Arial';
                 ctx.fillText(t.troops, t.x, t.y + 6);
             });
@@ -136,7 +203,7 @@
                 const el = document.getElementById(elementId);
                 if (el) {
                     el.textContent = `${PLAYER_NAMES[p.id]}: ${p.territoryCount} territories`;
-                    if (p.territoryCount === 0 && p.id !== NEUTRAL) {
+                    if (p.territoryCount === 0 && p.id !== NEUTRAL && territories.some(t => t.ownerId !== NEUTRAL)) { // Check if game isn't just starting neutral
                          el.style.textDecoration = 'line-through';
                     } else {
                          el.style.textDecoration = 'none';
@@ -145,9 +212,8 @@
             });
         }
 
-
         function getTerritoryAt(x, y) {
-            for (let i = territories.length - 1; i >= 0; i--) { // Iterate backwards for "top" feel
+            for (let i = territories.length - 1; i >= 0; i--) {
                 const t = territories[i];
                 const distance = Math.sqrt(Math.pow(x - t.x, 2) + Math.pow(y - t.y, 2));
                 if (distance <= TERRITORY_RADIUS) {
@@ -163,83 +229,90 @@
             const rect = canvas.getBoundingClientRect();
             const clickX = event.clientX - rect.left;
             const clickY = event.clientY - rect.top;
-
             const clickedTerritory = getTerritoryAt(clickX, clickY);
 
             if (clickedTerritory) {
-                if (selectedTerritoryId === null) { // No territory selected yet
-                    if (clickedTerritory.ownerId === PLAYER_HUMAN && clickedTerritory.troops > 1) {
-                        selectedTerritoryId = clickedTerritory.id;
-                        statusMessage.textContent = `Selected ${clickedTerritory.name}. Click an adjacent enemy to attack.`;
-                    } else if (clickedTerritory.ownerId === PLAYER_HUMAN && clickedTerritory.troops <= 1) {
-                        statusMessage.textContent = `${clickedTerritory.name} has too few troops to attack.`;
+                if (selectedTerritoryId === null) {
+                    if (clickedTerritory.ownerId === PLAYER_HUMAN) {
+                        if (clickedTerritory.troops > 1) {
+                            selectedTerritoryId = clickedTerritory.id;
+                            statusMessage.textContent = `Selected ${clickedTerritory.name}. Click an adjacent enemy/neutral territory to attack.`;
+                        } else {
+                            statusMessage.textContent = `${clickedTerritory.name} needs more than 1 troop to attack.`;
+                        }
                     } else {
-                         statusMessage.textContent = `Cannot select ${clickedTerritory.name}. Not your territory or no troops.`;
+                         statusMessage.textContent = `Cannot select ${clickedTerritory.name}. It's not your territory.`;
                     }
-                } else { // A source territory is already selected
+                } else {
                     const sourceTerritory = territories.find(t => t.id === selectedTerritoryId);
-                    if (clickedTerritory.id === selectedTerritoryId) { // Clicked selected again to deselect
+                    if (clickedTerritory.id === selectedTerritoryId) {
                         selectedTerritoryId = null;
                         statusMessage.textContent = "Selection cleared. Click your territory to select.";
-                    } else if (clickedTerritory.ownerId !== PLAYER_HUMAN) { // Target is an enemy or neutral
+                    } else if (clickedTerritory.ownerId !== PLAYER_HUMAN) {
                         if (sourceTerritory.neighbors.includes(clickedTerritory.id)) {
-                            // Attack
-                            const attackingTroops = sourceTerritory.troops - 1;
-                            if (attackingTroops > 0) {
-                                statusMessage.textContent = `${PLAYER_NAMES[PLAYER_HUMAN]} attacks ${clickedTerritory.name} from ${sourceTerritory.name} with ${attackingTroops} troops!`;
-                                resolveAttack(sourceTerritory, clickedTerritory, attackingTroops, PLAYER_HUMAN);
-                            } else {
-                                statusMessage.textContent = `${sourceTerritory.name} has no troops to send.`;
+                            const attackingTroops = sourceTerritory.troops - 1; // Always leave 1 troop behind
+                            statusMessage.textContent = `${PLAYER_NAMES[PLAYER_HUMAN]} attacks ${clickedTerritory.name} from ${sourceTerritory.name} with ${attackingTroops} troops!`;
+                            resolveAttack(sourceTerritory, clickedTerritory, attackingTroops, PLAYER_HUMAN);
+                            if (humanAlliances[clickedTerritory.ownerId]) { // Attacked an ally
+                                humanAlliances[clickedTerritory.ownerId] = false;
+                                statusMessage.textContent += ` Alliance with ${PLAYER_NAMES[clickedTerritory.ownerId]} broken!`;
+                                updateAllyButtonText();
                             }
-                            selectedTerritoryId = null; // Deselect after attack
+                            selectedTerritoryId = null;
                         } else {
                             statusMessage.textContent = `${clickedTerritory.name} is not adjacent to ${sourceTerritory.name}.`;
-                            selectedTerritoryId = null; // Deselect
                         }
                     } else { // Clicked another friendly territory
                          if (clickedTerritory.troops > 1) {
                             selectedTerritoryId = clickedTerritory.id;
-                            statusMessage.textContent = `Selected ${clickedTerritory.name}. Click an adjacent enemy to attack.`;
+                            statusMessage.textContent = `Selected ${clickedTerritory.name}. Click an adjacent enemy/neutral to attack.`;
                         } else {
-                            statusMessage.textContent = `${clickedTerritory.name} has too few troops to attack.`;
+                            statusMessage.textContent = `${clickedTerritory.name} needs more than 1 troop to select for attack.`;
                             selectedTerritoryId = null;
                         }
                     }
                 }
             } else {
-                selectedTerritoryId = null; // Clicked empty space
+                selectedTerritoryId = null;
                 statusMessage.textContent = "Selection cleared. Click your territory to select.";
             }
-            drawTerritories(); // Redraw to show selection or changes
         });
 
         function resolveAttack(source, target, attackingTroops, attackerOwnerId) {
-            if (source.troops <= attackingTroops) { // Should not happen if we send N-1
-                console.error("Attack with too many troops attempted.");
-                return;
+            if (source.troops <= attackingTroops) { // Should be N-1 logic
+                 source.troops = 1; // Ensure at least 1 troop remains
+            } else {
+                 source.troops -= attackingTroops;
             }
-            source.troops -= attackingTroops;
 
-            if (attackingTroops > target.troops) { // Attacker wins
+
+            let battleMessage = "";
+            if (attackingTroops > target.troops) {
                 const oldOwner = target.ownerId;
+                const oldOwnerName = oldOwner !== NEUTRAL ? PLAYER_NAMES[oldOwner] : "Neutral";
                 target.ownerId = attackerOwnerId;
                 target.troops = attackingTroops - target.troops;
-                statusMessage.textContent = `${PLAYER_NAMES[attackerOwnerId]} conquered ${target.name}!`;
+                battleMessage = `${PLAYER_NAMES[attackerOwnerId]} conquered ${target.name} from ${oldOwnerName}! ${target.troops} troops remain.`;
+                
                 if (oldOwner !== NEUTRAL) {
                     players.find(p=>p.id === oldOwner).territoryCount--;
                 }
                 players.find(p=>p.id === attackerOwnerId).territoryCount++;
-
-            } else { // Defender wins or ties (attacker loses troops)
+            } else {
                 target.troops -= attackingTroops;
-                statusMessage.textContent = `${target.name} defended against ${PLAYER_NAMES[attackerOwnerId]}'s attack!`;
+                battleMessage = `${target.name} defended against ${PLAYER_NAMES[attackerOwnerId]}'s attack! ${target.troops} troops remain.`;
             }
+            // Prepend to status, don't overwrite selection messages immediately
+            statusMessage.textContent = battleMessage; 
+
             checkWinCondition();
             updatePlayerInfoDisplay();
         }
 
         function generateTroops() {
             if (gameOver) return;
+            gameDay++;
+            gameDayDisplay.textContent = `Game Day: ${gameDay}`;
             territories.forEach(t => {
                 if (t.ownerId !== NEUTRAL) {
                     t.troops += TROOPS_PER_GEN;
@@ -259,46 +332,82 @@
             });
         }
 
-
         function aiAction() {
             if (gameOver) return;
 
             players.filter(p => p.isAI && p.territoryCount > 0).forEach(aiPlayer => {
-                let bestAttack = null;
-                let maxAdvantage = 0; // Simple advantage: own troops - enemy troops
-
+                let possibleAttacks = [];
                 const aiTerritories = territories.filter(t => t.ownerId === aiPlayer.id && t.troops > 1);
                 if (aiTerritories.length === 0) return;
 
-                // Simple strategy: find best attack
                 for (const source of aiTerritories) {
                     for (const neighborId of source.neighbors) {
                         const target = territories.find(t => t.id === neighborId);
-                        if (target.ownerId !== aiPlayer.id) { // Is an enemy or neutral
+                        // AI won't attack human if allied, unless it's the only option or very advantageous
+                        if (target.ownerId !== aiPlayer.id && !(target.ownerId === PLAYER_HUMAN && humanAlliances[aiPlayer.id])) {
                             const attackingTroops = source.troops - 1;
-                            if (attackingTroops > target.troops) { // Basic condition for attack
-                                let advantage = attackingTroops - target.troops;
-                                // Prioritize weaker enemies or valuable neutrals
-                                if (target.ownerId !== NEUTRAL) advantage += 5; // Bonus for taking enemy territory
-                                if (advantage > maxAdvantage) {
-                                    maxAdvantage = advantage;
-                                    bestAttack = { source, target, attackingTroops };
-                                }
+                            if (attackingTroops > 0) { // Need at least 1 troop to attack
+                                let score = 0;
+                                if (attackingTroops > target.troops) score += (attackingTroops - target.troops) * 2; // High score for winning
+                                else score -= (target.troops - attackingTroops); // Penalty for likely loss
+
+                                if (target.ownerId === NEUTRAL) score += 5; // Bonus for neutral
+                                else if (target.ownerId !== PLAYER_HUMAN) score += 2; // Slightly less bonus for other AI
+                                // Weaker targets are better
+                                score += (10 - Math.min(10, target.troops)); 
+                                
+                                possibleAttacks.push({ source, target, attackingTroops, score });
                             }
                         }
                     }
                 }
-                
-                if (bestAttack) {
-                    statusMessage.textContent = `${aiPlayer.name} attacks ${bestAttack.target.name} from ${bestAttack.source.name} with ${bestAttack.attackingTroops} troops.`;
-                    resolveAttack(bestAttack.source, bestAttack.target, bestAttack.attackingTroops, aiPlayer.id);
+
+                // If no non-allied targets, consider attacking human ally if desperate or highly advantageous
+                if (possibleAttacks.length === 0 && humanAlliances[aiPlayer.id]) {
+                     for (const source of aiTerritories) {
+                        for (const neighborId of source.neighbors) {
+                            const target = territories.find(t => t.id === neighborId);
+                            if (target.ownerId === PLAYER_HUMAN) { // Target is human ally
+                                const attackingTroops = source.troops -1;
+                                // Only attack ally if significantly stronger or only option
+                                if (attackingTroops > target.troops + 3) { // Must have strong advantage
+                                     possibleAttacks.push({ source, target, attackingTroops, score: attackingTroops - target.troops -10 }); // Lower score for ally attack
+                                }
+                            }
+                        }
+                     }
+                }
+
+
+                if (possibleAttacks.length > 0) {
+                    possibleAttacks.sort((a, b) => b.score - a.score); // Best score first
+                    const bestAttack = possibleAttacks[0];
+                    if (bestAttack.score > -5 || possibleAttacks.length < 3) { // Don't make terrible attacks unless few options
+                        // Add to global status without overwriting human's immediately
+                        let aiAttackStatus = `${aiPlayer.name} attacks ${bestAttack.target.name} from ${bestAttack.source.name}.`;
+                        console.log(aiAttackStatus); // Log AI action
+
+                        resolveAttack(bestAttack.source, bestAttack.target, bestAttack.attackingTroops, aiPlayer.id);
+                        if (bestAttack.target.ownerId === PLAYER_HUMAN && humanAlliances[aiPlayer.id]) {
+                            humanAlliances[aiPlayer.id] = false; // AI broke alliance
+                            statusMessage.textContent = `${aiPlayer.name} broke alliance and attacked you!`;
+                            updateAllyButtonText();
+                        }
+                    }
                 }
             });
         }
         
         function checkWinCondition() {
             updatePlayerTerritoryCounts();
-            const activePlayers = players.filter(p => p.territoryCount > 0);
+            const activePlayers = players.filter(p => p.territoryCount > 0 && p.id !== NEUTRAL);
+
+            if (activePlayers.length === 0 && territories.every(t => t.ownerId === NEUTRAL)) {
+                // This case might happen if all players somehow lose all land to neutral, unlikely with current rules.
+                // Or if game starts with no one owning land.
+                return; // No winner yet or game just reset
+            }
+
 
             if (activePlayers.length === 1) {
                 gameOver = true;
@@ -306,39 +415,78 @@
                 stopGameTimers();
             } else {
                 const humanPlayer = players.find(p => p.id === PLAYER_HUMAN);
-                if (humanPlayer.territoryCount === 0) {
+                if (humanPlayer.territoryCount === 0 && territories.some(t => t.ownerId === PLAYER_HUMAN) === false) { // Make sure human truly has no land
                     gameOver = true;
                     statusMessage.textContent = "You have been defeated! Game Over.";
                     stopGameTimers();
                 }
             }
+             updatePlayerInfoDisplay(); // Ensure info is up-to-date after counts
         }
 
         function stopGameTimers() {
-            clearInterval(gameLoopInterval); // Note: gameLoopInterval was never actually set with setInterval
             clearInterval(troopGenInterval);
             clearInterval(aiActionInterval);
         }
         
-        function gameLoop() { // Main drawing loop
+        function gameLoop() {
             if (!gameOver) {
+                pulseAnimationTime += 0.1; // Simple timer for pulse effect
                 drawTerritories();
             }
             requestAnimationFrame(gameLoop);
         }
 
-
-        function startGame() {
-            initializeTerritories();
-            statusMessage.textContent = "Game started! Conquer the world!";
-            updatePlayerInfoDisplay();
-            
-            troopGenInterval = setInterval(generateTroops, TROOP_GEN_INTERVAL_MS);
-            aiActionInterval = setInterval(aiAction, AI_ACTION_INTERVAL_MS);
-            requestAnimationFrame(gameLoop); // Start drawing loop
+        function updateAllyButtonText() {
+            allyAi1Button.textContent = humanAlliances[PLAYER_AI_1] ? `Break Alliance with Red` : `Ally with Red`;
+            allyAi2Button.textContent = humanAlliances[PLAYER_AI_2] ? `Break Alliance with Green` : `Ally with Green`;
         }
 
-        startGame();
+        allyAi1Button.addEventListener('click', () => {
+            if (gameOver) return;
+            humanAlliances[PLAYER_AI_1] = !humanAlliances[PLAYER_AI_1];
+            statusMessage.textContent = humanAlliances[PLAYER_AI_1] ? `Alliance formed with ${PLAYER_NAMES[PLAYER_AI_1]}.` : `Alliance with ${PLAYER_NAMES[PLAYER_AI_1]} broken.`;
+            updateAllyButtonText();
+        });
+
+        allyAi2Button.addEventListener('click', () => {
+            if (gameOver) return;
+            humanAlliances[PLAYER_AI_2] = !humanAlliances[PLAYER_AI_2];
+            statusMessage.textContent = humanAlliances[PLAYER_AI_2] ? `Alliance formed with ${PLAYER_NAMES[PLAYER_AI_2]}.` : `Alliance with ${PLAYER_NAMES[PLAYER_AI_2]} broken.`;
+            updateAllyButtonText();
+        });
+
+        restartButton.addEventListener('click', () => {
+            stopGameTimers();
+            startGame();
+        });
+
+        function startGame() {
+            gameOver = false;
+            selectedTerritoryId = null;
+            gameDay = 0;
+            pulseAnimationTime = 0;
+            
+            initializePlayers(); // Resets player objects and alliances
+            initializeTerritories(); // Resets territory data
+            
+            updatePlayerTerritoryCounts(); // Crucial to do this after init
+            updatePlayerInfoDisplay();
+            gameDayDisplay.textContent = `Game Day: ${gameDay}`;
+            statusMessage.textContent = "Game restarted! Conquer the world!";
+
+            stopGameTimers(); // Clear any existing timers before starting new ones
+            troopGenInterval = setInterval(generateTroops, TROOP_GEN_INTERVAL_MS);
+            aiActionInterval = setInterval(aiAction, AI_ACTION_INTERVAL_MS);
+            
+            if (!gameLoop._rAF) { // Start animation loop if not already running
+                gameLoop._rAF = requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Add a flag to prevent multiple rAF loops if restart is spammed
+        gameLoop._rAF = null; 
+        startGame(); // Initial game start
     </script>
 </body>
 </html>
