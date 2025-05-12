@@ -94,7 +94,8 @@
                     if (neighbor && t.id < neighbor.id) { // Draw each connection once
                         ctx.beginPath();
                         ctx.moveTo(t.x, t.y);
- существо                        ctx.lineTo(neighbor.x, neighbor.y);
+                        // Corrected line: removed "существо "
+                        ctx.lineTo(neighbor.x, neighbor.y);
                         ctx.stroke();
                     }
                 });
@@ -314,7 +315,7 @@
         }
 
         function stopGameTimers() {
-            clearInterval(gameLoopInterval);
+            clearInterval(gameLoopInterval); // Note: gameLoopInterval was never actually set with setInterval
             clearInterval(troopGenInterval);
             clearInterval(aiActionInterval);
         }
